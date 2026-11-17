@@ -135,22 +135,27 @@ virtual user repeats a realistic journey, with short "think time" between steps:
 | Users   | Ramp 0 → 20 virtual users (15 s), hold 45 s, ramp down 10 s | 1 virtual user for 10 s           |
 | Use     | Gate every change in CI                                     | Quick check that the script works |
 
-**Thresholds** are the pass/fail criteria. If any is crossed, k6 exits with an error and the build fails:
+**Thresholds** are the pass/fail criteria. If any is crossed, k6 exits with an error and the build fails.
+They were **calibrated from a measured baseline**, not guessed: the first CI runs used loose limits, the real numbers
+were measured, and the budgets were then set at roughly 10-20x the baseline p95. That is tight enough to catch a real
+slowdown, and loose enough not to fail because a shared CI machine had a noisy moment.
 
-| Metric                      | Threshold                  |
-| --------------------------- | -------------------------- |
-| Failed requests             | < 1%                       |
-| Response checks passing     | > 99%                      |
-| All requests                | p95 < 400 ms, p99 < 800 ms |
-| `GET /books?available=true` | p95 < 300 ms               |
-| `GET /books/:id`            | p95 < 200 ms               |
-| `POST /members`             | p95 < 300 ms               |
-| `POST /loans`               | p95 < 400 ms               |
-| `POST /loans/:id/return`    | p95 < 400 ms               |
+| Metric                      | Baseline p95 (CI) | Threshold                 |
+| --------------------------- | ----------------- | ------------------------- |
+| Failed requests             | 0%                | < 1%                      |
+| Response checks passing     | 100%              | > 99%                     |
+| All requests                | -                 | p95 < 50 ms, p99 < 100 ms |
+| `GET /books?available=true` | 2.5 ms            | p95 < 40 ms               |
+| `GET /books/:id`            | 1.6 ms            | p95 < 30 ms               |
+| `POST /members`             | 1.9 ms            | p95 < 30 ms               |
+| `POST /loans`               | 3.6 ms            | p95 < 50 ms               |
+| `POST /loans/:id/return`    | 2.7 ms            | p95 < 50 ms               |
+
+Baseline run: about 2,900 requests (41/s) from 20 virtual users, 0% failed.
 
 Every request is tagged with its endpoint, so a slowdown is reported for the endpoint that caused it, not hidden in
-an overall average. Each CI run writes a per-endpoint table (median, p95, p99, budget, result) to the run summary
-and uploads the full k6 results.
+an overall average. Each CI run writes a per-endpoint table (median, p95, p99, budget, result) to the run summary,
+adds one annotation per endpoint on the run page, and uploads the full k6 results.
 
 > The API runs with an in-memory PostgreSQL (PGlite) on a shared CI machine, so the absolute numbers describe this
 > setup, not a production deployment. What matters is the **method**: a repeatable load profile, per-endpoint latency

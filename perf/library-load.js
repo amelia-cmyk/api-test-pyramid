@@ -28,13 +28,19 @@ const profiles = {
   },
 };
 
-// Latency budgets per endpoint (95th percentile, in ms). Reads are expected to be faster than writes.
+/**
+ * Latency budgets per endpoint (95th percentile, in ms), calibrated on the CI runner.
+ * Baseline p95 on 2026-11-17 (20 VUs): list_books 2.5, get_book 1.6, register_member 1.9, borrow 3.6, return_loan 2.7.
+ * Budgets are ~10-20x the baseline: tight enough to catch a real slowdown (an extra query per row, a missing
+ * index, a slow dependency), loose enough not to fail because a shared CI machine had a noisy moment.
+ * Writes get more room than reads because they run in a transaction.
+ */
 const LATENCY_BUDGET_P95 = {
-  list_books: 300,
-  get_book: 200,
-  register_member: 300,
-  borrow: 400,
-  return_loan: 400,
+  list_books: 40,
+  get_book: 30,
+  register_member: 30,
+  borrow: 50,
+  return_loan: 50,
 };
 
 export const options = {
@@ -43,7 +49,7 @@ export const options = {
   thresholds: {
     http_req_failed: ['rate<0.01'], // fewer than 1% failed requests
     checks: ['rate>0.99'], // more than 99% of response checks pass
-    http_req_duration: ['p(95)<400', 'p(99)<800'],
+    http_req_duration: ['p(95)<50', 'p(99)<100'],
     ...Object.fromEntries(
       Object.entries(LATENCY_BUDGET_P95).map(([endpoint, ms]) => [
         `http_req_duration{endpoint:${endpoint}}`,
