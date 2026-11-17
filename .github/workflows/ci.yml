@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -34,8 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -51,7 +51,7 @@ jobs:
             console.log(['### Unit test coverage (src/domain)','| Metric | % | Covered |', '|---|---|---|',
               ...['lines', 'branches', 'functions', 'statements'].map(row)].join('\n'));
           " >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: unit-coverage-report
@@ -65,8 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -82,7 +82,7 @@ jobs:
             console.log(['### Total coverage (unit + integration)', '| Metric | % | Covered |', '|---|---|---|',
               ...['lines', 'branches', 'functions', 'statements'].map(row)].join('\n'));
           " >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: integration-results
@@ -99,8 +99,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -119,7 +119,7 @@ jobs:
               ...p.interactions.map(i => '| ' + i.providerStates[0].name + ' | ' + i.request.method + ' ' + i.request.path + ' | ' + i.response.status + ' |')
             ].join('\n'));
           " >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: pact-contract
@@ -133,8 +133,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -155,7 +155,25 @@ jobs:
       - name: Performance summary
         if: always()
         run: cat k6-summary.md >> "$GITHUB_STEP_SUMMARY" || echo "No k6 summary produced" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      # Annotations show on the run page and can be read through the public API, without opening the logs
+      - name: Latency annotations
+        if: always()
+        run: |
+          node -e "
+            const m = require('./k6-summary.json').metrics;
+            for (const [name, metric] of Object.entries(m)) {
+              const endpoint = name.match(/^http_req_duration\{endpoint:(.+)\}$/);
+              if (!endpoint || endpoint[1] === 'setup') continue;
+              const v = metric.values;
+              const ok = Object.values(metric.thresholds || {}).every((t) => t.ok);
+              console.log('::notice title=k6 ' + endpoint[1] + '::' + (ok ? 'within' : 'OVER') + ' budget - median ' +
+                v.med.toFixed(1) + ' ms, p95 ' + v['p(95)'].toFixed(1) + ' ms, p99 ' + v['p(99)'].toFixed(1) + ' ms, max ' + v.max.toFixed(1) + ' ms');
+            }
+            const r = m.http_reqs.values;
+            console.log('::notice title=k6 totals::' + r.count + ' requests (' + r.rate.toFixed(1) + '/s), failed ' +
+              (m.http_req_failed.values.rate * 100).toFixed(2) + '%, checks ' + (m.checks.values.rate * 100).toFixed(2) + '%');
+          " || echo "No k6 results to annotate"
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: k6-results
