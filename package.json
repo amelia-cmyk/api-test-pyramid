@@ -17,6 +17,7 @@
     "dev": "tsx watch src/server.ts",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
+    "test:unit:coverage": "vitest run --project unit --coverage --coverage.include=src/domain/**",
     "test:integration": "vitest run --project integration",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
