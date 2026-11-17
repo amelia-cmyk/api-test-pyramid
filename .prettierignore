@@ -4,3 +4,4 @@ dist
 pacts
 package-lock.json
 test-results
+k6-summary.*

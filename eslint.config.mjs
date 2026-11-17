@@ -27,5 +27,14 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
+  {
+    // k6 scripts are plain JavaScript run by k6 (not Node.js), so no type information and k6 globals
+    files: ['perf/**/*.js'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' },
+    },
+  },
   prettier,
 );

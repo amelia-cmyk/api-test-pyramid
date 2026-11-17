@@ -5,3 +5,5 @@ pacts
 *.log
 .env
 test-results
+k6-summary.*
+api.log

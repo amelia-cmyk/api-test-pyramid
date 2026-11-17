@@ -125,3 +125,41 @@ jobs:
           name: pact-contract
           path: pacts/
           retention-days: 14
+
+  # Top of the pyramid: many virtual users at once; latency and error-rate thresholds gate the build
+  performance:
+    name: Performance tests (k6)
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: '2.4.0'
+      - name: Start the API
+        run: |
+          PORT=3000 npm start > api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && exit 0
+            sleep 1
+          done
+          echo "API did not start"; cat api.log; exit 1
+      - name: Load test (ramps up to 20 virtual users)
+        run: k6 run perf/library-load.js
+      - name: Performance summary
+        if: always()
+        run: cat k6-summary.md >> "$GITHUB_STEP_SUMMARY" || echo "No k6 summary produced" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-results
+          path: |
+            k6-summary.json
+            api.log
+          retention-days: 14

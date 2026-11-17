@@ -23,6 +23,8 @@
     "test:contract": "npm run test:contract:consumer && npm run test:contract:provider",
     "test:contract:consumer": "node -e \"require('fs').rmSync('pacts',{recursive:true,force:true})\" && vitest run --project contract-consumer",
     "test:contract:provider": "vitest run --project contract-provider",
+    "test:perf": "k6 run perf/library-load.js",
+    "test:perf:smoke": "k6 run -e PROFILE=smoke perf/library-load.js",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
