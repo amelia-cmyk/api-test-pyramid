@@ -21,6 +21,22 @@ export default defineConfig({
           hookTimeout: 30_000,
         },
       },
+      // Contract tests run as two steps, in order: the consumer writes the pact file, the provider verifies it.
+      // See the "test:contract" script.
+      {
+        test: {
+          name: 'contract-consumer',
+          include: ['tests/contract/consumer.pact.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'contract-provider',
+          include: ['tests/contract/provider.pact.test.ts'],
+          hookTimeout: 30_000,
+          testTimeout: 60_000,
+        },
+      },
     ],
     coverage: {
       provider: 'v8',

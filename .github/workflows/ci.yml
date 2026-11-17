@@ -71,8 +71,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Runs every layer so the coverage thresholds apply to the whole codebase
-      - run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
+      # Unit + integration together, so the coverage thresholds apply to the whole codebase
+      - run: npx vitest run --project unit --project integration --coverage --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
       - name: Coverage summary
         if: always()
         run: |
@@ -89,4 +89,39 @@ jobs:
           path: |
             coverage/
             test-results/
+          retention-days: 14
+
+  # Contract: the consumer writes the pact, then the real provider must honour it.
+  # (In a multi-repo setup the pact would go through a Pact Broker and `can-i-deploy` would gate releases.)
+  contract:
+    name: Contract tests (Pact)
+    needs: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Consumer - write the contract
+        run: npm run test:contract:consumer
+      - name: Provider - verify the real API against the contract
+        run: npm run test:contract:provider
+      - name: Contract summary
+        if: always()
+        run: |
+          node -e "
+            const p = require('./pacts/LibraryMobileApp-LibraryAPI.json');
+            console.log(['### Contract: ' + p.consumer.name + ' → ' + p.provider.name,
+              '| Provider state | Request | Expected status |', '|---|---|---|',
+              ...p.interactions.map(i => '| ' + i.providerStates[0].name + ' | ' + i.request.method + ' ' + i.request.path + ' | ' + i.response.status + ' |')
+            ].join('\n'));
+          " >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pact-contract
+          path: pacts/
           retention-days: 14

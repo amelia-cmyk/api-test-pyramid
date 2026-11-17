@@ -5,6 +5,7 @@
 ![Vitest](https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Pact](https://img.shields.io/badge/Pact-contract%20testing-1F6FEB)
 
 A small **Library REST API** (books, members, loans) that is tested at **every level of the test pyramid**.
 The goal is to show a complete testing strategy, not only end-to-end tests: each kind of risk is caught by the
@@ -14,7 +15,7 @@ cheapest test that can catch it.
             ╱╲
            ╱  ╲         Performance (k6)          load, latency thresholds         🚧 planned
           ╱────╲
-         ╱      ╲       Contract (Pact)           API consumer ⇄ provider          🚧 planned
+         ╱      ╲       Contract (Pact)           API consumer ⇄ provider          ✅ 6 interactions
         ╱────────╲
        ╱          ╲     Integration (Supertest)   HTTP + real PostgreSQL           ✅ 43 tests
       ╱────────────╲
@@ -31,6 +32,7 @@ business rules).
 | --------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | **Unit**        | Wrong business rules                                                                      | Late fee is not capped at Rp50,000                |
 | **Integration** | Wrong HTTP status codes, validation, SQL, transactions, database constraints, concurrency | Two members borrow the last copy at the same time |
+| **Contract**    | API changes that break a client application, even when all API tests still pass           | `availableCopies` renamed to `stock`              |
 
 ## 📚 Business rules (unit tests)
 
@@ -80,6 +82,45 @@ Every test sends real HTTP requests (Supertest) to the app, which talks to a **r
 
 Errors always have the same shape: `{ "error": { "code": "LOAN_LIMIT_REACHED", "message": "...", "details": [...] } }`.
 
+## 🤝 Contract tests (Pact)
+
+A separate application, the **Library Mobile App** ([`consumer/library-client.ts`](consumer/library-client.ts)),
+uses this API. It lives in this repo only for the demo; normally it would be its own repo and team.
+
+1. **Consumer test** ([`tests/contract/consumer.pact.test.ts`](tests/contract/consumer.pact.test.ts)): the app's real
+   client runs against a Pact mock server. Each interaction states what the app sends and the **minimum it needs back**,
+   using type matchers ("any integer") rather than exact data. The result is a contract file, `pacts/*.json`.
+2. **Provider verification** ([`tests/contract/provider.pact.test.ts`](tests/contract/provider.pact.test.ts)): every
+   interaction is replayed against the **real API and database**. Provider-state handlers put the database in the
+   situation each interaction expects (for example "member 1 has reached the loan limit").
+
+| Interaction              | Provider state                                | Response               |
+| ------------------------ | --------------------------------------------- | ---------------------- |
+| Get a book               | book 1 exists with 2 available copies         | 200                    |
+| Get a missing book       | no books exist                                | 404                    |
+| List available books     | some books are available, some fully borrowed | 200                    |
+| Borrow a book            | member 1 can borrow book 1                    | 201                    |
+| Borrow at the loan limit | member 1 has reached the loan limit           | 409 + exact error code |
+| Return a late book       | loan 1 is returned 3 days after its due date  | 200 + late fee         |
+
+### What the contract allows and what it blocks
+
+Simulated API changes, checked against the contract:
+
+| API change                             | Result                | Why                                    |
+| -------------------------------------- | --------------------- | -------------------------------------- |
+| Rename `availableCopies` to `stock`    | ❌ Verification fails | The app reads `availableCopies`        |
+| Send `lateFee` as the string `"6000"`  | ❌ Verification fails | The contract expects an integer        |
+| Rename error code `LOAN_LIMIT_REACHED` | ❌ Verification fails | The app shows a message per exact code |
+| Add a new field `publishedYear`        | ✅ Passes             | Extra fields never break a consumer    |
+| Remove `isbn` from book responses      | ✅ Passes             | The app never uses it                  |
+
+The API team learns about a breaking change **before** it is deployed, and stays free to make every other change.
+
+> In a real multi-repo setup, the consumer would publish the contract to a **Pact Broker** and the provider pipeline
+> would run `can-i-deploy` before releasing. Here the contract is passed as a file between two CI steps to keep the
+> project self-contained.
+
 ## ✅ Are the tests any good?
 
 High coverage only proves code was _executed_. To check that the tests really _verify_ behaviour, bugs were
@@ -93,6 +134,7 @@ deliberately introduced (manual mutation testing) and every one made the suite f
 | Late fee calculated but never saved          | Integration (3)  |
 | Same loan can be returned twice              | Integration      |
 | Duplicate-email index becomes case-sensitive | Integration      |
+| Error code renamed (would break the app)     | Contract         |
 
 ## 🗂️ Project structure
 
@@ -103,10 +145,12 @@ src/
 ├── http/        Express routes, request validation (Zod), error → HTTP status mapping
 ├── db/          PostgreSQL schema with CHECK / UNIQUE / FOREIGN KEY constraints
 └── clock.ts     Injectable clock
+consumer/       The "Library Mobile App" API client (contract consumer)
 tests/
 ├── unit/
-└── integration/
-    └── support/ Test app setup, fake clock, test data builders
+├── integration/
+│   └── support/ Test app setup, fake clock, test data builders
+└── contract/    Pact consumer test + provider verification
 ```
 
 ## 🚀 Getting started
@@ -124,7 +168,8 @@ npm start        # API on http://localhost:3000 (in-memory database)
 | `npm test`                  | Run all tests                           |
 | `npm run test:unit`         | Unit tests only                         |
 | `npm run test:integration`  | Integration tests only                  |
-| `npm run test:coverage`     | All tests with a coverage report        |
+| `npm run test:coverage`     | Unit + integration with coverage report |
+| `npm run test:contract`     | Consumer contract, then provider verify |
 | `npm start` / `npm run dev` | Start the API (dev = restart on change) |
 | `npm run check`             | Type check + lint + format check        |
 
@@ -134,6 +179,6 @@ Set `DATA_DIR=./data` to keep the database on disk between restarts.
 
 GitHub Actions runs the layers as separate jobs, fastest first, and stops at the first failing layer:
 
-**quality gates → unit tests → integration tests**
+**quality gates → unit tests → integration tests → contract tests**
 
 Each job writes a coverage table to the run summary and uploads the HTML coverage report and JUnit results.
