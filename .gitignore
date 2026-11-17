@@ -4,3 +4,4 @@ dist
 pacts
 *.log
 .env
+test-results

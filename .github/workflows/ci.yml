@@ -53,6 +53,39 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-report
+          name: unit-coverage-report
           path: coverage/
+          retention-days: 14
+
+  # Middle of the pyramid: real HTTP requests against the app wired to a real PostgreSQL (PGlite)
+  integration:
+    name: Integration tests (API + PostgreSQL)
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Runs every layer so the coverage thresholds apply to the whole codebase
+      - run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
+      - name: Coverage summary
+        if: always()
+        run: |
+          node -e "
+            const t = require('./coverage/coverage-summary.json').total;
+            const row = (k) => '| ' + k + ' | ' + t[k].pct + '% | ' + t[k].covered + '/' + t[k].total + ' |';
+            console.log(['### Total coverage (unit + integration)', '| Metric | % | Covered |', '|---|---|---|',
+              ...['lines', 'branches', 'functions', 'statements'].map(row)].join('\n'));
+          " >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-results
+          path: |
+            coverage/
+            test-results/
           retention-days: 14

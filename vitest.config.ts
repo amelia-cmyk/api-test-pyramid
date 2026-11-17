@@ -13,13 +13,27 @@ export default defineConfig({
           include: ['tests/unit/**/*.test.ts'],
         },
       },
+      {
+        test: {
+          name: 'integration',
+          include: ['tests/integration/**/*.test.ts'],
+          // Starting an in-memory PostgreSQL takes a moment, so hooks get more time than the default
+          hookTimeout: 30_000,
+        },
+      },
     ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
+      exclude: ['src/server.ts'], // process entry point only: reads env vars and starts listening
       reporter: ['text', 'html', 'json-summary'],
-      // Business rules are pure functions, so they must be fully covered.
       thresholds: {
+        // The whole codebase must stay well covered...
+        lines: 95,
+        branches: 90,
+        functions: 90,
+        statements: 95,
+        // ...and business rules are pure functions, so they must be fully covered.
         'src/domain/**': { lines: 100, branches: 100, functions: 100, statements: 100 },
       },
     },

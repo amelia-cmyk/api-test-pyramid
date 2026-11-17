@@ -3,3 +3,4 @@ coverage
 dist
 pacts
 package-lock.json
+test-results
