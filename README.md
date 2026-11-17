@@ -6,6 +6,7 @@
 ![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 ![Pact](https://img.shields.io/badge/Pact-contract%20testing-1F6FEB)
+![k6](https://img.shields.io/badge/k6-performance-7D64FF?logo=k6&logoColor=white)
 
 A small **Library REST API** (books, members, loans) that is tested at **every level of the test pyramid**.
 The goal is to show a complete testing strategy, not only end-to-end tests: each kind of risk is caught by the
@@ -13,7 +14,7 @@ cheapest test that can catch it.
 
 ```
             ╱╲
-           ╱  ╲         Performance (k6)          load, latency thresholds         🚧 planned
+           ╱  ╲         Performance (k6)          load, latency thresholds         ✅ 20 virtual users
           ╱────╲
          ╱      ╲       Contract (Pact)           API consumer ⇄ provider          ✅ 6 interactions
         ╱────────╲
@@ -33,6 +34,7 @@ business rules).
 | **Unit**        | Wrong business rules                                                                      | Late fee is not capped at Rp50,000                |
 | **Integration** | Wrong HTTP status codes, validation, SQL, transactions, database constraints, concurrency | Two members borrow the last copy at the same time |
 | **Contract**    | API changes that break a client application, even when all API tests still pass           | `availableCopies` renamed to `stock`              |
+| **Performance** | Slow endpoints and errors that only appear when many users act at the same time           | Borrowing slows down past its latency budget      |
 
 ## 📚 Business rules (unit tests)
 
@@ -121,6 +123,39 @@ The API team learns about a breaking change **before** it is deployed, and stays
 > would run `can-i-deploy` before releasing. Here the contract is passed as a file between two CI steps to keep the
 > project self-contained.
 
+## ⚡ Performance tests (k6)
+
+[`perf/library-load.js`](perf/library-load.js) simulates many members using the library at the same time. Each
+virtual user repeats a realistic journey, with short "think time" between steps:
+
+**browse available books → open a book → register → borrow it → return it**
+
+| Setting | Load profile (CI)                                           | Smoke profile                     |
+| ------- | ----------------------------------------------------------- | --------------------------------- |
+| Users   | Ramp 0 → 20 virtual users (15 s), hold 45 s, ramp down 10 s | 1 virtual user for 10 s           |
+| Use     | Gate every change in CI                                     | Quick check that the script works |
+
+**Thresholds** are the pass/fail criteria. If any is crossed, k6 exits with an error and the build fails:
+
+| Metric                      | Threshold                  |
+| --------------------------- | -------------------------- |
+| Failed requests             | < 1%                       |
+| Response checks passing     | > 99%                      |
+| All requests                | p95 < 400 ms, p99 < 800 ms |
+| `GET /books?available=true` | p95 < 300 ms               |
+| `GET /books/:id`            | p95 < 200 ms               |
+| `POST /members`             | p95 < 300 ms               |
+| `POST /loans`               | p95 < 400 ms               |
+| `POST /loans/:id/return`    | p95 < 400 ms               |
+
+Every request is tagged with its endpoint, so a slowdown is reported for the endpoint that caused it, not hidden in
+an overall average. Each CI run writes a per-endpoint table (median, p95, p99, budget, result) to the run summary
+and uploads the full k6 results.
+
+> The API runs with an in-memory PostgreSQL (PGlite) on a shared CI machine, so the absolute numbers describe this
+> setup, not a production deployment. What matters is the **method**: a repeatable load profile, per-endpoint latency
+> budgets, and a build that fails when a change makes the API slower or less reliable.
+
 ## ✅ Are the tests any good?
 
 High coverage only proves code was _executed_. To check that the tests really _verify_ behaviour, bugs were
@@ -146,6 +181,7 @@ src/
 ├── db/          PostgreSQL schema with CHECK / UNIQUE / FOREIGN KEY constraints
 └── clock.ts     Injectable clock
 consumer/       The "Library Mobile App" API client (contract consumer)
+perf/           k6 performance test
 tests/
 ├── unit/
 ├── integration/
@@ -163,15 +199,17 @@ npm test         # all tests
 npm start        # API on http://localhost:3000 (in-memory database)
 ```
 
-| Command                     | Description                             |
-| --------------------------- | --------------------------------------- |
-| `npm test`                  | Run all tests                           |
-| `npm run test:unit`         | Unit tests only                         |
-| `npm run test:integration`  | Integration tests only                  |
-| `npm run test:coverage`     | Unit + integration with coverage report |
-| `npm run test:contract`     | Consumer contract, then provider verify |
-| `npm start` / `npm run dev` | Start the API (dev = restart on change) |
-| `npm run check`             | Type check + lint + format check        |
+| Command                     | Description                               |
+| --------------------------- | ----------------------------------------- |
+| `npm test`                  | Run all tests                             |
+| `npm run test:unit`         | Unit tests only                           |
+| `npm run test:integration`  | Integration tests only                    |
+| `npm run test:coverage`     | Unit + integration with coverage report   |
+| `npm run test:contract`     | Consumer contract, then provider verify   |
+| `npm run test:perf`         | k6 load test (needs k6 and a running API) |
+| `npm run test:perf:smoke`   | k6 smoke test, 1 virtual user             |
+| `npm start` / `npm run dev` | Start the API (dev = restart on change)   |
+| `npm run check`             | Type check + lint + format check          |
 
 Set `DATA_DIR=./data` to keep the database on disk between restarts.
 
@@ -179,6 +217,6 @@ Set `DATA_DIR=./data` to keep the database on disk between restarts.
 
 GitHub Actions runs the layers as separate jobs, fastest first, and stops at the first failing layer:
 
-**quality gates → unit tests → integration tests → contract tests**
+**quality gates → unit tests → integration tests → contract tests → performance tests**
 
 Each job writes a coverage table to the run summary and uploads the HTML coverage report and JUnit results.
